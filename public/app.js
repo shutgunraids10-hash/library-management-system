@@ -3,13 +3,13 @@ const sections = {
     ["Overview", "overview", "⌂"], ["Find a book", "catalog", "⌕"], ["My library", "my-library", "▤"], ["Reservations", "reservations", "◷"]
   ],
   librarian: [
-    ["Overview", "overview", "⌂"], ["Book inventory", "inventory", "▤"], ["Borrowing & returns", "transactions", "↔"], ["Reservations", "reservations", "◷"], ["Reports", "reports", "▥"]
+    ["Overview", "overview", "⌂"], ["Book inventory", "inventory", "▤"], ["Archived books", "archived", "▧"], ["Borrowing & returns", "transactions", "↔"], ["Reservations", "reservations", "◷"], ["Reports", "reports", "▥"]
   ],
   administrator: [
-    ["Overview", "overview", "⌂"], ["Book catalog", "inventory", "▤"], ["People & access", "users", "♙"], ["Activity reports", "reports", "▥"], ["Settings", "settings", "⚙"]
+    ["Overview", "overview", "⌂"], ["Book catalog", "inventory", "▤"], ["Archived books", "archived", "▧"], ["People & access", "users", "♙"], ["Activity reports", "reports", "▥"], ["Settings", "settings", "⚙"]
   ]
 };
-const titles = { overview: "Overview", catalog: "Find a book", "my-library": "My library", reservations: "Reservations", inventory: "Book inventory", transactions: "Borrowing & returns", reports: "Reports & activity", users: "People & access", settings: "System settings" };
+const titles = { overview: "Overview", catalog: "Find a book", "my-library": "My library", reservations: "Reservations", inventory: "Book inventory", archived: "Archived books", transactions: "Borrowing & returns", reports: "Reports & activity", users: "People & access", settings: "System settings" };
 const state = {
   role: "student", page: "login", query: "", category: "All categories", filter: "all", reportRange: 7, modal: null,
   books: [], loans: [], reservations: [],
@@ -106,6 +106,7 @@ function renderPage() {
     case "my-library": return renderMyLibrary();
     case "reservations": return renderReservations();
     case "inventory": return renderInventory();
+    case "archived": return renderArchivedBooks();
     case "transactions": return renderTransactions();
     case "reports": return renderReports();
     case "users": return renderUsers();
@@ -186,6 +187,10 @@ function renderInventory() {
   if (state.filter === "low") books = books.filter((b) => Number(b.available) <= 1);
   const collection = state.books.filter((b) => b.status !== "archived");
   return `<section class="catalog-tools"><label class="catalog-search"><span>⌕</span><input id="catalog-search" placeholder="Search inventory" value="${esc(state.query)}" aria-label="Search inventory"/></label><select id="category-filter" aria-label="Filter by category">${["All categories", ...new Set(collection.map((b) => b.category))].map((c) => `<option ${state.category === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></section><div class="filter-row"><div><button class="filter-pill ${state.filter !== "low" ? "selected" : ""}" data-filter="all">All titles <span>${collection.length}</span></button><button class="filter-pill ${state.filter === "low" ? "selected" : ""}" data-filter="low">Low availability <span>${collection.filter((b) => b.available <= 1).length}</span></button></div><span class="results-label">${collection.reduce((n, b) => n + Number(b.copies || 0), 0)} total copies</span></div><section class="panel table-panel">${table(["Title", "Category", "Shelf", "Copies", "Availability", ""], books.map((b) => `<tr><td><div class="table-book"><span class="table-book-icon">▤</span><div><strong>${esc(b.title)}</strong><small>${esc(b.author)} · ISBN ${esc(b.isbn)}</small></div></div></td><td><span class="category-chip">${esc(b.category)}</span></td><td>${esc(b.shelf)}</td><td>${b.copies}</td><td><span class="availability-dot ${b.available > 0 ? "available" : "unavailable"}"></span>${b.available} / ${b.copies} available</td><td><button class="icon-button" data-action="book-details" data-id="${esc(b.id)}" aria-label="Book details for ${esc(b.title)}">···</button></td></tr>`))}</section>`;
+}
+function renderArchivedBooks() {
+  const books = state.books.filter((book) => book.status === "archived").filter((book) => !state.query || `${book.title} ${book.author} ${book.isbn}`.toLowerCase().includes(state.query.toLowerCase()));
+  return `<section class="catalog-tools"><label class="catalog-search"><span>⌕</span><input id="catalog-search" placeholder="Search archived books" value="${esc(state.query)}" aria-label="Search archived books"/></label><span class="results-label">${books.length} archived ${books.length === 1 ? "title" : "titles"}</span></section><section class="panel table-panel">${table(["Title", "Category", "Shelf", "Copies", "Actions"], books.map((book) => `<tr><td><div class="table-book"><span class="table-book-icon">▤</span><div><strong>${esc(book.title)}</strong><small>${esc(book.author)} · ISBN ${esc(book.isbn || "—")}</small></div></div></td><td>${esc(book.category)}</td><td>${esc(book.shelf || "—")}</td><td>${book.copies}</td><td><button class="text-button" data-action="restore-book" data-id="${esc(book.id)}">Restore</button><button class="text-button danger-text" data-action="delete-book" data-id="${esc(book.id)}">Delete permanently</button></td></tr>`))}</section>`;
 }
 function renderTransactions() {
   const allRows = state.loans;
@@ -280,6 +285,8 @@ function action(name, id) {
   if (name === "refresh-health") { checkHealth(); return; }
   if (name === "save-settings") { saveSettings(); return; }
   if (name === "archive-book") { archiveBook(id); return; }
+  if (name === "restore-book") { setBookArchived(id, false); return; }
+  if (name === "delete-book") { deleteArchivedBook(id); return; }
   if (name === "toggle-user") { toggleUser(id); return; }
 }
 function reserveBook(id) {
@@ -373,13 +380,22 @@ async function apiRecord(type, method, body) {
   catch { toast("Could not reach the library database."); return null; }
 }
 async function archiveBook(id) {
+  await setBookArchived(id, true);
+}
+async function setBookArchived(id, archived) {
   const book = state.books.find((item) => item.id === id);
   if (!book) return;
-  if (state.liveUser) {
-    const result = await apiRecord("books", "DELETE", { id: book._id || book.id });
-    if (!result) return;
-  }
-  book.status = "archived"; state.modal = null; toast("Book archived from the catalog."); render();
+  const result = await apiRecord("books", "PATCH", { id: book._id || book.id, updates: { status: archived ? "archived" : "active" } });
+  if (!result) return;
+  book.status = archived ? "archived" : "active"; state.modal = null; state.query = ""; toast(archived ? "Book archived from the catalog." : "Book restored to the catalog."); render();
+}
+async function deleteArchivedBook(id) {
+  const book = state.books.find((item) => item.id === id && item.status === "archived");
+  if (!book) return;
+  if (!window.confirm(`Permanently delete “${book.title}”? This cannot be undone. Historical loan records will be kept.`)) return;
+  const result = await apiRecord("books", "DELETE", { id: book._id || book.id });
+  if (!result) return;
+  state.books = state.books.filter((item) => item.id !== id); toast("Book permanently deleted."); render();
 }
 async function toggleUser(id) {
   const account = state.users.find((item, index) => item.id === id || (!item.id && String(index) === id));

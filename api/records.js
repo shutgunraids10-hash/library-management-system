@@ -150,7 +150,7 @@ module.exports = async function records(req, res) {
     if (type === "loans" && Object.hasOwn(inputUpdates, "status") && inputUpdates.status !== "returned") return json(res, 400, { error: "A loan can only be marked returned." });
     if (type === "reservations" && Object.hasOwn(inputUpdates, "status") && !["approved", "declined"].includes(inputUpdates.status)) return json(res, 400, { error: "Choose approved or declined for a reservation." });
     if (type === "reservations" && Object.hasOwn(inputUpdates, "action") && inputUpdates.action !== "checkout-approved") return json(res, 400, { error: "Choose a valid request action." });
-    const allowedFields = type === "books" ? ["title", "author", "category", "isbn", "shelf", "copies"] : type === "loans" ? ["status", "dueAt"] : ["status"];
+    const allowedFields = type === "books" ? ["title", "author", "category", "isbn", "shelf", "copies", "status"] : type === "loans" ? ["status", "dueAt"] : ["status"];
     const safe = Object.fromEntries(Object.entries(inputUpdates).filter(([key]) => allowedFields.includes(key)));
     if (!Object.keys(safe).length && !(type === "reservations" && inputUpdates.action === "checkout-approved")) return json(res, 400, { error: "No editable fields were provided." });
     safe.updatedAt = new Date();
@@ -172,6 +172,7 @@ module.exports = async function records(req, res) {
         }
       }
       if (type === "books") {
+        if (Object.hasOwn(safe, "status") && !["active", "archived"].includes(safe.status)) return json(res, 400, { error: "Book status must be active or archived." });
         for (const [field, max] of Object.entries({ title: 160, author: 120, category: 80, isbn: 32, shelf: 32 })) {
           if (Object.hasOwn(safe, field)) {
             if (typeof safe[field] !== "string" || !safe[field].trim()) return json(res, 400, { error: `${field} must be a non-empty string.` });
@@ -221,8 +222,16 @@ module.exports = async function records(req, res) {
     if (!ObjectId.isValid(id)) return json(res, 400, { error: "Record ID is invalid." });
     try {
       const db = await getDb();
-      const result = await db.collection("books").updateOne({ _id: new ObjectId(id) }, { $set: { status: "archived", updatedAt: new Date() } });
-      return result.matchedCount ? json(res, 200, { archived: true }) : json(res, 404, { error: "Book not found." });
+      const bookId = new ObjectId(id);
+      const book = await db.collection("books").findOne({ _id: bookId }, { projection: { status: 1 } });
+      if (!book) return json(res, 404, { error: "Book not found." });
+      if (book.status !== "archived") return json(res, 409, { error: "Archive the book before permanently deleting it." });
+      const activeLoans = await db.collection("loans").countDocuments({ bookId: id, status: { $ne: "returned" } });
+      if (activeLoans) return json(res, 409, { error: "This book cannot be deleted while copies are checked out." });
+      const pendingRequests = await db.collection("reservations").countDocuments({ bookId: id, status: "pending" });
+      if (pendingRequests) return json(res, 409, { error: "Resolve pending reservations before permanently deleting this book." });
+      await db.collection("books").deleteOne({ _id: bookId, status: "archived" });
+      return json(res, 200, { deleted: true });
     } catch (error) {
       console.error("SmartLib book archive failed:", error.message);
       return json(res, 503, { error: "Could not archive the book." });
