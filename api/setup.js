@@ -17,7 +17,9 @@ function setupConfig() {
   const previousEmail = String(process.env.INITIAL_ADMIN_PREVIOUS_EMAIL || "").trim().toLowerCase().slice(0, 254);
   const token = String(process.env.INITIAL_ADMIN_SETUP_TOKEN || "");
   const sessionSecretReady = String(process.env.SESSION_SECRET || "").length >= 32;
-  return { name, email, previousEmail, token, enabled: Boolean(name && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && token.length >= 32 && sessionSecretReady) };
+  const identityReady = Boolean(name && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
+  const tokenReady = token.length >= 32;
+  return { name, email, previousEmail, token, identityReady, sessionSecretReady, tokenReady, enabled: Boolean(identityReady && tokenReady && sessionSecretReady) };
 }
 
 function validSetupToken(provided, expected) {
@@ -32,7 +34,7 @@ module.exports = async function setup(req, res) {
 
   const config = setupConfig();
   if (req.method === "GET") {
-    if (!config.enabled) return json(res, 200, { available: false });
+    if (!config.enabled) return json(res, 200, { available: false, configReady: false });
     try {
       const users = (await getDb()).collection("users");
       const count = await users.countDocuments({}, { limit: 1 });
@@ -42,7 +44,7 @@ module.exports = async function setup(req, res) {
         : null;
       return json(res, 200, previousAdmin
         ? { available: true, action: "change-email", name: config.name, email: config.email, previousEmail: config.previousEmail }
-        : { available: false });
+        : { available: false, configReady: true });
     } catch (error) {
       console.error("SmartLib setup status failed:", error.message);
       return json(res, 503, { error: "Could not check first-account setup." });
