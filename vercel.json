@@ -2,6 +2,7 @@
   "version": 2,
   "outputDirectory": "public",
   "rewrites": [
-    { "source": "/login", "destination": "/" }
+    { "source": "/login", "destination": "/" },
+    { "source": "/setup", "destination": "/" }
   ]
 }

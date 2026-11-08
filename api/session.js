@@ -57,7 +57,7 @@ module.exports = async function session(req, res) {
   res.setHeader("Cache-Control", "no-store");
   if (req.method === "GET") {
     const user = await readSession(req);
-    return json(res, 200, { authenticated: Boolean(user), user: user ? { id: user.id, name: user.name, email: user.email, role: user.role } : null, databaseConfigured: Boolean(process.env.MONGODB_URI) });
+    return json(res, 200, { authenticated: Boolean(user), user: user ? { id: user.id, name: user.name, email: user.email, role: user.role } : null, databaseConfigured: Boolean(process.env.MONGODB_URI), signInConfigured: Boolean(process.env.MONGODB_URI && process.env.SESSION_SECRET && process.env.SESSION_SECRET.length >= 32) });
   }
   if (req.method === "DELETE") {
     clearSession(res);
@@ -89,3 +89,4 @@ module.exports = async function session(req, res) {
   }
 };
 module.exports.readSession = readSession;
+module.exports.setSession = setSession;
