@@ -42,8 +42,8 @@ module.exports = async function records(req, res) {
       const email = typeof body.email === "string" ? body.email.trim().toLowerCase().slice(0, 254) : "";
       const password = typeof body.password === "string" ? body.password : "";
       const role = body.role;
-      if (name.length < 2 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 12 || password.length > 256 || !["student", "librarian"].includes(role)) {
-        return json(res, 400, { error: "Enter a name, valid email, 12-character password, and student or librarian role." });
+      if (name.length < 2 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 12 || password.length > 256 || !["student", "librarian", "administrator"].includes(role)) {
+        return json(res, 400, { error: "Enter a name, valid email, 12-character password, and a valid library role." });
       }
       try {
         const db = await getDb();

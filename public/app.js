@@ -33,7 +33,7 @@ const sections = {
 };
 const titles = { overview: "Overview", catalog: "Find a book", "my-library": "My library", reservations: "Reservations", inventory: "Book inventory", transactions: "Borrowing & returns", reports: "Reports & activity", users: "People & access", settings: "System settings" };
 const state = {
-  role: "student", page: "overview", query: "", category: "All categories", filter: "all", modal: null,
+  role: "student", page: window.location.pathname.replace(/\/+$/, "") === "/login" || window.location.hash === "#login" ? "login" : "overview", query: "", category: "All categories", filter: "all", modal: null,
   books: load("smartlib_books", seedBooks), loans: load("smartlib_loans", seedLoans), reservations: load("smartlib_reservations", seedReservations),
   settings: loadObject("smartlib_settings", { libraryName: "Northview Community Library", contactEmail: "library@northview.edu", loanPeriod: 14 }),
   toast: "", health: "preview", liveUser: null, users: [{ name: "Alex Morgan", email: "alex.morgan@northview.edu", role: "student", status: "Active" }, { name: "Jamie Rivera", email: "jamie.rivera@northview.edu", role: "librarian", status: "Active" }, { name: "Taylor Morgan", email: "taylor.morgan@northview.edu", role: "administrator", status: "Active" }, { name: "Mia Santos", email: "mia.santos@northview.edu", role: "student", status: "Active" }]
@@ -53,6 +53,13 @@ function getCurrentName() { return state.liveUser?.name || names[state.role]; }
 
 function render() {
   const app = document.querySelector("#app");
+  if (state.page === "login" && !state.liveUser) {
+    document.title = "Sign in · SmartLib";
+    app.innerHTML = `${renderLogin()}<div class="toast ${state.toast ? "visible" : ""}" role="status">${esc(state.toast)}</div>`;
+    bindEvents();
+    return;
+  }
+  document.title = `${titles[state.page] || "Overview"} · SmartLib`;
   const menu = sections[state.role];
   app.innerHTML = `<div class="shell">
     <aside class="sidebar">
@@ -68,6 +75,31 @@ function render() {
     </main>
   </div>${state.modal ? renderModal() : ""}<div class="toast ${state.toast ? "visible" : ""}" role="status">${esc(state.toast)}</div>`;
   bindEvents();
+}
+function renderLogin() {
+  return `<main class="login-shell">
+    <section class="login-showcase" aria-label="SmartLib introduction">
+      <a class="brand login-brand" href="/" aria-label="SmartLib home">${icon("logo")}<span>smart<span class="brand-green">lib</span></span></a>
+      <div class="login-showcase-copy"><span class="login-overline"><i></i> YOUR COMMUNITY LIBRARY</span><h1>Find your next<br/>favorite story.</h1><p>One welcoming place to discover books, manage your loans, and keep your reading life in motion.</p></div>
+      <div class="login-art" aria-hidden="true"><div class="login-art-orbit orbit-one"></div><div class="login-art-orbit orbit-two"></div><div class="login-book book-back"><span></span><i></i></div><div class="login-book book-front"><span></span><i></i><b></b></div><div class="login-art-spark spark-one">✦</div><div class="login-art-spark spark-two">✳</div><div class="login-art-leaf leaf-one"></div><div class="login-art-leaf leaf-two"></div></div>
+      <div class="login-showcase-footer"><span>Make room for a little wonder.</span><span>SMARTLIB · 2026</span></div>
+    </section>
+    <section class="login-main"><div class="login-card">
+      <div class="login-card-mark">${icon("logo")}<span>SMARTLIB MEMBER PORTAL</span></div>
+      <div class="login-heading"><p class="login-kicker">WELCOME BACK</p><h2>Sign in to your library</h2><p>Your assigned role opens the right workspace: student, librarian, or administrator.</p></div>
+      <form id="login-form" class="login-form">
+        <label for="login-email">Email address</label><input id="login-email" name="email" type="email" autocomplete="username" required placeholder="you@example.com"/>
+        <div class="login-password-label"><label for="login-password">Password</label><a href="mailto:${esc(state.settings.contactEmail || "library@northview.edu")}?subject=SmartLib%20account%20help">Need help?</a></div>
+        <div class="login-password-wrap"><input id="login-password" name="password" type="password" autocomplete="current-password" required placeholder="Enter your password"/><button type="button" class="password-toggle" data-action="toggle-password" aria-label="Show password">Show</button></div>
+        <button type="submit" class="btn btn-primary login-submit">Sign in <span aria-hidden="true">→</span></button>
+      </form>
+      <div class="login-separator"><span>OR</span></div>
+      <div class="login-demo-label"><strong>Explore a demo workspace</strong><span>Choose a role to preview</span></div>
+      <div class="login-demo-roles">${["student", "librarian", "administrator"].map((role) => `<button class="login-role-button" data-action="demo-role" data-id="${role}"><span class="login-role-icon">${role === "student" ? "S" : role === "librarian" ? "L" : "A"}</span><span><strong>${roleName(role)}</strong><small>${esc(names[role])}</small></span><span class="login-role-arrow">→</span></button>`).join("")}</div>
+      <p class="login-help">Don’t have an account? Ask your library staff to create one.</p>
+      <div class="login-security"><span aria-hidden="true">⌑</span><span>Your account is protected with secure sign-in.</span></div>
+    </div><div class="login-footer"><span>© ${new Date().getFullYear()} ${esc(state.settings.libraryName || "SmartLib")}</span><span>Made for readers</span></div></section>
+  </main>`;
 }
 function subtitle() {
   if (state.page === "overview") return state.role === "student" ? "A little reading goes a long way. Pick up where you left off." : state.role === "librarian" ? "Here’s what’s happening at the library today." : "Your library at a glance. Everything is in good order.";
@@ -188,7 +220,7 @@ function renderModal() {
   const isBook = m.type === "add-book" || m.type === "edit-book";
   const editing = m.type === "edit-book" ? state.books.find(x => x.id === m.id) : null;
   const title = editing ? "Edit book details" : isBook ? "Add a book" : m.type === "checkout" ? "Check out a book" : m.type === "login" ? "Sign in to SmartLib" : "Add a member";
-  return `<div class="modal-backdrop" data-action="close-modal"><section class="modal form-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><button class="modal-close" data-action="close-modal" aria-label="Close dialog">×</button><span class="modal-kicker">${isBook ? "COLLECTION" : m.type === "checkout" ? "CIRCULATION" : m.type === "login" ? "YOUR LIBRARY ACCOUNT" : "MEMBERS"}</span><h2 id="modal-title">${title}</h2><p class="modal-sub">${isBook ? "Keep the collection details up to date." : m.type === "checkout" ? "Start a new loan for a library member." : m.type === "login" ? "Use your library email and password." : state.liveUser ? "Set a temporary password for the new library account." : "Create an account for someone in your library preview."}</p><form id="modal-form">${m.type === "login" ? `<label>Email address<input name="email" type="email" required autocomplete="username" placeholder="name@school.edu"/></label><label>Password<input name="password" type="password" required autocomplete="current-password"/></label>` : isBook ? `<label>Book title<input name="title" required value="${esc(editing?.title || "")}" placeholder="e.g. The Midnight Library"/></label><label>Author<input name="author" required value="${esc(editing?.author || "")}" placeholder="Author name"/></label><div class="form-row"><label>Category<select name="category">${["Literature","Fiction","Science","Business","Classics","Personal Growth","History","Other"].map(x=>`<option ${editing?.category===x?"selected":""}>${x}</option>`).join("")}</select></label><label>ISBN<input name="isbn" value="${esc(editing?.isbn || "")}" placeholder="978…"/></label></div><div class="form-row"><label>Shelf location<input name="shelf" value="${esc(editing?.shelf || "")}" placeholder="e.g. LIT-A12"/></label><label>Number of copies<input name="copies" type="number" min="0" value="${editing?.copies ?? 1}"/></label></div>` : m.type === "checkout" ? `<label>Member name<input name="member" required placeholder="Search member name or email" list="member-list"/><datalist id="member-list">${state.users.map(u=>`<option value="${esc(u.name)}">${esc(u.email)}</option>`).join("")}</datalist></label><label>Book<select name="book" required>${state.books.filter(b=>b.available>0).map(b=>`<option value="${esc(b.id)}">${esc(b.title)} · ${b.available} available</option>`).join("")}</select></label><label>Due date<input name="due" type="date" min="${new Date().toISOString().slice(0,10)}" value="${new Date(Date.now()+Number(state.settings.loanPeriod || 14)*86400000).toISOString().slice(0,10)}"/></label>` : `<label>Full name<input name="name" required minlength="2" maxlength="120" autocomplete="name" placeholder="Member name"/></label><label>Email address<input name="email" type="email" required autocomplete="email" maxlength="254" placeholder="name@school.edu"/></label>${state.liveUser ? `<label>Temporary password<input name="password" type="password" required minlength="12" autocomplete="new-password" placeholder="At least 12 characters"/></label>` : ""}<label>Role<select name="role"><option value="student">Student</option><option value="librarian">Librarian</option></select></label>`}<div class="modal-actions"><button type="button" class="btn btn-outline" data-action="close-modal">Cancel</button><button type="submit" class="btn btn-primary">${editing ? "Save changes" : m.type === "checkout" ? "Check out book" : m.type === "login" ? "Sign in" : isBook ? "Add to collection" : "Create account"}</button></div></form></section></div>`;
+  return `<div class="modal-backdrop" data-action="close-modal"><section class="modal form-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><button class="modal-close" data-action="close-modal" aria-label="Close dialog">×</button><span class="modal-kicker">${isBook ? "COLLECTION" : m.type === "checkout" ? "CIRCULATION" : m.type === "login" ? "YOUR LIBRARY ACCOUNT" : "MEMBERS"}</span><h2 id="modal-title">${title}</h2><p class="modal-sub">${isBook ? "Keep the collection details up to date." : m.type === "checkout" ? "Start a new loan for a library member." : m.type === "login" ? "Use your library email and password." : state.liveUser ? "Set a temporary password for the new library account." : "Create an account for someone in your library preview."}</p><form id="modal-form">${m.type === "login" ? `<label>Email address<input name="email" type="email" required autocomplete="username" placeholder="name@school.edu"/></label><label>Password<input name="password" type="password" required autocomplete="current-password"/></label>` : isBook ? `<label>Book title<input name="title" required value="${esc(editing?.title || "")}" placeholder="e.g. The Midnight Library"/></label><label>Author<input name="author" required value="${esc(editing?.author || "")}" placeholder="Author name"/></label><div class="form-row"><label>Category<select name="category">${["Literature","Fiction","Science","Business","Classics","Personal Growth","History","Other"].map(x=>`<option ${editing?.category===x?"selected":""}>${x}</option>`).join("")}</select></label><label>ISBN<input name="isbn" value="${esc(editing?.isbn || "")}" placeholder="978…"/></label></div><div class="form-row"><label>Shelf location<input name="shelf" value="${esc(editing?.shelf || "")}" placeholder="e.g. LIT-A12"/></label><label>Number of copies<input name="copies" type="number" min="0" value="${editing?.copies ?? 1}"/></label></div>` : m.type === "checkout" ? `<label>Member name<input name="member" required placeholder="Search member name or email" list="member-list"/><datalist id="member-list">${state.users.map(u=>`<option value="${esc(u.name)}">${esc(u.email)}</option>`).join("")}</datalist></label><label>Book<select name="book" required>${state.books.filter(b=>b.available>0).map(b=>`<option value="${esc(b.id)}">${esc(b.title)} · ${b.available} available</option>`).join("")}</select></label><label>Due date<input name="due" type="date" min="${new Date().toISOString().slice(0,10)}" value="${new Date(Date.now()+Number(state.settings.loanPeriod || 14)*86400000).toISOString().slice(0,10)}"/></label>` : `<label>Full name<input name="name" required minlength="2" maxlength="120" autocomplete="name" placeholder="Member name"/></label><label>Email address<input name="email" type="email" required autocomplete="email" maxlength="254" placeholder="name@school.edu"/></label>${state.liveUser ? `<label>Temporary password<input name="password" type="password" required minlength="12" autocomplete="new-password" placeholder="At least 12 characters"/></label>` : ""}<label>Role<select name="role"><option value="student">Student</option><option value="librarian">Librarian</option><option value="administrator">Administrator</option></select></label>`}<div class="modal-actions"><button type="button" class="btn btn-outline" data-action="close-modal">Cancel</button><button type="submit" class="btn btn-primary">${editing ? "Save changes" : m.type === "checkout" ? "Check out book" : m.type === "login" ? "Sign in" : isBook ? "Add to collection" : "Create account"}</button></div></form></section></div>`;
 }
 
 function bindEvents() {
@@ -198,6 +230,7 @@ function bindEvents() {
   for (const id of ["global-search", "catalog-search"]) { const input = document.getElementById(id); if (input) input.addEventListener("input", () => { state.query = input.value; if (id === "global-search" && state.query && state.page !== "catalog" && state.page !== "inventory") { state.page = state.role === "student" ? "catalog" : "inventory"; state.filter = "all"; } renderKeepingFocus(id, state.query); }); }
   const cat = document.getElementById("category-filter"); if (cat) cat.addEventListener("change", () => { state.category = cat.value; render(); });
   const form = document.getElementById("modal-form"); if (form) form.addEventListener("submit", submitModal);
+  const loginForm = document.getElementById("login-form"); if (loginForm) loginForm.addEventListener("submit", async (event) => { event.preventDefault(); await authenticate(Object.fromEntries(new FormData(loginForm))); });
 }
 function renderKeepingFocus(id, value) { render(); const next = document.getElementById(id) || document.getElementById(id === "global-search" ? "catalog-search" : "global-search"); if (next) { next.focus(); next.setSelectionRange(value.length, value.length); } }
 function keyHandler(e) { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); document.getElementById("global-search")?.focus(); } if (e.key === "Escape" && state.modal) { state.modal = null; render(); } }
@@ -207,7 +240,9 @@ function action(name, id) {
   if (name === "add-book") { state.modal = { type: "add-book" }; render(); return; }
   if (name === "checkout") { state.modal = { type: "checkout" }; render(); return; }
   if (name === "add-user") { state.modal = { type: "add-user" }; render(); return; }
-  if (name === "sign-in" || (name === "profile" && state.health === "live" && !state.liveUser)) { state.modal = { type: "login" }; render(); return; }
+  if (name === "sign-in" || (name === "profile" && state.health === "live" && !state.liveUser)) { state.modal = null; state.page = "login"; history.pushState({}, "", "/login"); render(); return; }
+  if (name === "demo-role" || name === "demo-preview") { const role = ["student", "librarian", "administrator"].includes(id) ? id : "student"; state.liveUser = null; state.role = role; state.health = "preview"; state.page = "overview"; state.modal = null; state.books = load("smartlib_books", seedBooks); state.loans = load("smartlib_loans", seedLoans); state.reservations = load("smartlib_reservations", seedReservations); state.settings = loadObject("smartlib_settings", { libraryName: "Northview Community Library", contactEmail: "library@northview.edu", loanPeriod: 14 }); history.replaceState({}, "", "/"); state.toast = `You’re previewing the ${roleName(role).toLowerCase()} workspace.`; render(); return; }
+  if (name === "toggle-password") { const input = document.getElementById("login-password"); if (input) { input.type = input.type === "password" ? "text" : "password"; document.querySelector(".password-toggle")?.setAttribute("aria-label", input.type === "password" ? "Show password" : "Hide password"); document.querySelector(".password-toggle").textContent = input.type === "password" ? "Show" : "Hide"; } return; }
   if (name === "book-details") { state.modal = { type: "book", id }; render(); return; }
   if (name === "edit-book") { state.modal = { type: "edit-book", id }; render(); return; }
   if (name === "close-modal") { state.modal = null; render(); return; }
@@ -242,7 +277,7 @@ function reserveBook(id) {
 async function submitModal(event) {
   event.preventDefault(); const data = Object.fromEntries(new FormData(event.currentTarget)); const type = state.modal?.type;
   if (type === "login") {
-    try { const response = await fetch("/api/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }); const result = await response.json(); if (!response.ok) return toast(result.error || "Sign in failed."); state.liveUser = result.user; state.role = result.user.role; state.health = "live"; state.modal = null; await restoreRecords(); toast(`Welcome, ${result.user.name}.`); } catch { toast("Could not reach the library service."); }
+    await authenticate(data);
     return;
   }
   if (type === "add-book" || type === "edit-book") {
@@ -270,6 +305,15 @@ async function submitModal(event) {
     state.users.unshift({ ...account, status: "Active" }); state.modal = null; state.filter = "all"; toast("Preview member account added."); render();
   }
 }
+async function authenticate(credentials) {
+  try {
+    const response = await fetch("/api/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(credentials) });
+    const result = await response.json();
+    if (!response.ok) { toast(result.error || "Sign in failed."); return false; }
+    state.liveUser = result.user; state.role = result.user.role; state.health = "live"; state.page = "overview"; state.modal = null; history.replaceState({}, "", "/");
+    await restoreRecords(); toast(`Welcome, ${result.user.name} · ${roleName(result.user.role)} workspace.`); return true;
+  } catch { toast("Could not reach the library service."); return false; }
+}
 function toast(message) { state.toast = message; render(); setTimeout(() => { state.toast = ""; document.querySelector(".toast")?.classList.remove("visible"); }, 2600); }
 async function saveSettings() {
   const settings = { libraryName: document.querySelector('[name="libraryName"]')?.value.trim(), contactEmail: document.querySelector('[name="contactEmail"]')?.value.trim().toLowerCase(), loanPeriod: Number(document.querySelector('[name="loanPeriod"]')?.value) };
@@ -284,8 +328,8 @@ async function saveSettings() {
   }
   toast("Library settings saved."); render();
 }
-function checkHealth() { fetch("/api/health").then(r => r.json()).then(async d => { state.health = d.database === "connected" ? "live" : d.database === "unavailable" ? "unavailable" : "preview"; if (state.health === "live" && !state.liveUser) { try { const r = await fetch("/api/records?type=books"); if (r.ok) { const data = await r.json(); state.books = data.items.map(b => ({ ...b, id: b._id })); } } catch { /* signed-in reads remain available later */ } } render(); }).catch(() => { state.health = "preview"; render(); }); }
-async function restoreSession() { try { const response = await fetch("/api/session"); const data = await response.json(); if (data.authenticated && data.user) { state.liveUser = data.user; state.role = data.user.role; state.health = "live"; await restoreRecords(); } } catch { /* preview mode */ } }
+function checkHealth() { fetch("/api/health").then(r => r.json()).then(d => { state.health = d.database === "connected" ? "live" : d.database === "unavailable" ? "unavailable" : "preview"; if (state.health === "live" && !state.liveUser) { state.page = "login"; if (window.location.pathname !== "/login") history.replaceState({}, "", "/login"); } render(); }).catch(() => { state.health = "preview"; render(); }); }
+async function restoreSession() { try { const response = await fetch("/api/session"); const data = await response.json(); if (data.authenticated && data.user) { state.liveUser = data.user; state.role = data.user.role; state.health = "live"; state.page = "overview"; if (window.location.pathname === "/login") history.replaceState({}, "", "/"); await restoreRecords(); } } catch { /* preview mode */ } }
 
 async function apiRecord(type, method, body) {
   try { const query = new URLSearchParams({ type }); if (method === "DELETE" && body?.id) query.set("id", body.id); const response = await fetch(`/api/records?${query}`, { method, headers: { "Content-Type": "application/json" }, body: method === "GET" || method === "DELETE" ? undefined : JSON.stringify(body) }); const result = await response.json(); if (!response.ok) { toast(result.error || "Database update failed."); return null; } return result; }
@@ -332,11 +376,17 @@ async function restoreRecords() {
 }
 async function signOut() {
   try { await fetch("/api/session", { method: "DELETE" }); } catch { /* local state is cleared even if the request fails */ }
-  state.liveUser = null; state.role = "student"; state.page = "overview"; state.health = "preview";
+  state.liveUser = null; state.role = "student"; state.page = "login"; state.health = "preview"; history.replaceState({}, "", "/login");
   state.books = load("smartlib_books", seedBooks); state.loans = load("smartlib_loans", seedLoans); state.reservations = load("smartlib_reservations", seedReservations);
-  toast("You’ve signed out.");
+  toast("You’ve signed out."); checkHealth();
 }
 
+window.addEventListener("popstate", () => {
+  if (window.location.pathname === "/login" && !state.liveUser) state.page = "login";
+  else if (state.health === "live" && !state.liveUser) { state.page = "login"; history.replaceState({}, "", "/login"); }
+  else state.page = "overview";
+  render();
+});
 render();
 document.addEventListener("keydown", keyHandler);
 checkHealth();
