@@ -14,7 +14,7 @@ const state = {
   role: "student", page: "login", query: "", category: "All categories", filter: "all", modal: null,
   books: [], loans: [], reservations: [],
   settings: { libraryName: "SmartLib", contactEmail: "", loanPeriod: 14 },
-  toast: "", health: "checking", liveUser: null, users: [], setupAvailable: false, setupChecked: false, setupName: "", setupEmail: ""
+  toast: "", health: "checking", liveUser: null, users: [], setupAvailable: false, setupChecked: false, setupName: "", setupEmail: "", setupAction: "create", previousAdminEmail: ""
 };
 
 function esc(v) { return String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
@@ -81,14 +81,20 @@ function renderSetup() {
     ? `<p class="login-help">Checking first-account setup…</p>`
     : !state.setupAvailable
       ? `<p class="login-help" role="status">First-account setup is unavailable or has already been completed. Return to <a href="/login">sign in</a>.</p>`
-      : `<p class="login-help">Create the first administrator account for <strong>${esc(state.setupName)}</strong> (${esc(state.setupEmail)}). Choose a password with at least 12 characters.</p>
-        <form id="setup-form" class="login-form">
-          <label for="setup-token">One-time setup token</label><input id="setup-token" name="token" type="password" autocomplete="off" required minlength="32" />
-          <label for="setup-password" style="margin-top:18px">Administrator password</label><input id="setup-password" name="password" type="password" autocomplete="new-password" required minlength="12" maxlength="256" />
-          <label for="setup-confirm" style="margin-top:18px">Confirm password</label><input id="setup-confirm" name="confirmation" type="password" autocomplete="new-password" required minlength="12" maxlength="256" />
-          <button type="submit" class="btn btn-primary login-submit">Create administrator <span aria-hidden="true">→</span></button>
-        </form>`;
-  return `<main class="login-shell"><section class="login-showcase" aria-label="SmartLib introduction"><a class="brand login-brand" href="/login">${icon("logo")}<span>smart<span class="brand-green">lib</span></span></a><div class="login-showcase-copy"><span class="login-overline"><i></i> FIRST-TIME SETUP</span><h1>Open your<br/>library doors.</h1><p>Securely create the administrator account that manages your SmartLib workspace.</p></div><div class="login-showcase-footer"><span>Protected one-time setup.</span><span>SMARTLIB · ${new Date().getFullYear()}</span></div></section><section class="login-main"><div class="login-card"><div class="login-card-mark">${icon("logo")}<span>INITIAL ADMINISTRATOR</span></div><div class="login-heading"><p class="login-kicker">FIRST ACCOUNT</p><h2>Create your admin sign-in</h2><p>This setup closes automatically once the first account exists.</p></div>${content}<div class="login-security"><span aria-hidden="true">⌑</span><span>Your password is stored as a salted hash.</span></div></div><div class="login-footer"><a href="/login">Back to sign in</a></div></section></main>`;
+      : state.setupAction === "change-email"
+        ? `<p class="login-help">Confirm the email change for <strong>${esc(state.setupName)}</strong>: ${esc(state.previousAdminEmail)} → ${esc(state.setupEmail)}. Your current password will remain the same.</p>
+          <form id="setup-form" class="login-form">
+            <label for="setup-token">One-time setup token</label><input id="setup-token" name="token" type="password" autocomplete="off" required minlength="32" />
+            <button type="submit" class="btn btn-primary login-submit">Update administrator email <span aria-hidden="true">→</span></button>
+          </form>`
+        : `<p class="login-help">Create the first administrator account for <strong>${esc(state.setupName)}</strong> (${esc(state.setupEmail)}). Choose a password with at least 12 characters.</p>
+          <form id="setup-form" class="login-form">
+            <label for="setup-token">One-time setup token</label><input id="setup-token" name="token" type="password" autocomplete="off" required minlength="32" />
+            <label for="setup-password" style="margin-top:18px">Administrator password</label><input id="setup-password" name="password" type="password" autocomplete="new-password" required minlength="12" maxlength="256" />
+            <label for="setup-confirm" style="margin-top:18px">Confirm password</label><input id="setup-confirm" name="confirmation" type="password" autocomplete="new-password" required minlength="12" maxlength="256" />
+            <button type="submit" class="btn btn-primary login-submit">Create administrator <span aria-hidden="true">→</span></button>
+          </form>`;
+  return `<main class="login-shell"><section class="login-showcase" aria-label="SmartLib introduction"><a class="brand login-brand" href="/login">${icon("logo")}<span>smart<span class="brand-green">lib</span></span></a><div class="login-showcase-copy"><span class="login-overline"><i></i> FIRST-TIME SETUP</span><h1>Open your<br/>library doors.</h1><p>Securely create or update the administrator account that manages your SmartLib workspace.</p></div><div class="login-showcase-footer"><span>Protected one-time setup.</span><span>SMARTLIB · ${new Date().getFullYear()}</span></div></section><section class="login-main"><div class="login-card"><div class="login-card-mark">${icon("logo")}<span>INITIAL ADMINISTRATOR</span></div><div class="login-heading"><p class="login-kicker">FIRST ACCOUNT</p><h2>${state.setupAction === "change-email" ? "Update admin email" : "Create your admin sign-in"}</h2><p>This secure setup closes when complete.</p></div>${content}<div class="login-security"><span aria-hidden="true">⌑</span><span>Your password is stored as a salted hash.</span></div></div><div class="login-footer"><a href="/login">Back to sign in</a></div></section></main>`;
 }
 function subtitle() {
   if (state.page === "overview") return state.role === "student" ? "A little reading goes a long way. Pick up where you left off." : state.role === "librarian" ? "Here’s what’s happening at the library today." : "Your library at a glance. Everything is in good order.";
@@ -313,16 +319,17 @@ async function saveSettings() {
   toast("Library settings saved."); render();
 }
 function checkHealth() { Promise.all([fetch("/api/health"), fetch("/api/session")]).then(async ([healthResponse, sessionResponse]) => { const health = await healthResponse.json(); const session = await sessionResponse.json(); state.health = health.database === "connected" && session.signInConfigured ? "live" : "unavailable"; render(); }).catch(() => { state.health = "unavailable"; render(); }); }
-async function checkSetup() { try { const response = await fetch("/api/setup"); const result = await response.json(); state.setupAvailable = Boolean(response.ok && result.available); state.setupName = result.name || ""; state.setupEmail = result.email || ""; } catch { state.setupAvailable = false; } state.setupChecked = true; render(); }
+async function checkSetup() { try { const response = await fetch("/api/setup"); const result = await response.json(); state.setupAvailable = Boolean(response.ok && result.available); state.setupName = result.name || ""; state.setupEmail = result.email || ""; state.setupAction = result.action || "create"; state.previousAdminEmail = result.previousEmail || ""; } catch { state.setupAvailable = false; } state.setupChecked = true; render(); }
 async function restoreSession() { try { const response = await fetch("/api/session"); const data = await response.json(); if (data.authenticated && data.user) { state.liveUser = data.user; state.role = data.user.role; state.health = "live"; state.page = "overview"; history.replaceState({}, "", "/"); await restoreRecords(); } } catch { state.health = "unavailable"; render(); } }
 
 async function createInitialAdmin(event) {
   event.preventDefault();
   const form = document.getElementById("setup-form");
   const data = Object.fromEntries(new FormData(form));
-  if (data.password !== data.confirmation) return toast("The passwords do not match.");
+  if (state.setupAction === "create" && data.password !== data.confirmation) return toast("The passwords do not match.");
   try {
-    const response = await fetch("/api/setup", { method: "POST", headers: { "Content-Type": "application/json", "X-SmartLib-Setup-Token": data.token }, body: JSON.stringify({ password: data.password, confirmation: data.confirmation }) });
+    const action = state.setupAction === "change-email" ? "change-email" : "create";
+    const response = await fetch("/api/setup", { method: "POST", headers: { "Content-Type": "application/json", "X-SmartLib-Setup-Token": data.token }, body: JSON.stringify({ action, password: data.password, confirmation: data.confirmation }) });
     const result = await response.json();
     if (!response.ok) return toast(result.error || "First-account setup failed.");
     state.liveUser = result.user; state.role = result.user.role; state.health = "live"; state.page = "overview"; state.setupAvailable = false; history.replaceState({}, "", "/");

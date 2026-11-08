@@ -16,8 +16,8 @@ Set the environment values below in `.env.local` before starting the app. Sign-i
 ## Connect MongoDB
 
 1. The connected production database is in MongoDB Atlas. Keep its URI in Vercel as the server-only `MONGODB_URI`; set `MONGODB_DB` only if needed. `SESSION_SECRET` must be at least 32 characters.
-2. Set `REQUIRE_DATABASE=1` and the initial admin name and email. Add a separate random `INITIAL_ADMIN_SETUP_TOKEN` of at least 32 characters as a Sensitive Vercel environment variable. Never commit the token.
-3. Open `/setup`, enter that token, and choose the administrator password. Setup is available only while the users collection is empty, and closes after the first account is created. The setup endpoint also creates the required indexes.
+2. Set `REQUIRE_DATABASE=1` and the initial admin name and email. To migrate the earlier admin email, set `INITIAL_ADMIN_PREVIOUS_EMAIL` to the address already stored in MongoDB. Add a separate random `INITIAL_ADMIN_SETUP_TOKEN` of at least 32 characters as a Sensitive Vercel environment variable. Never commit the token.
+3. Open `/setup` and enter that token. If no accounts exist, choose the initial administrator password. If the configured previous administrator exists, the page updates that account to the new email while retaining its existing password. Setup closes after completion. The setup endpoint also creates the required indexes.
 4. Sign in, then create librarian and student accounts from People & access. Use a unique 12-character-or-longer password for each account.
 
 Alternatively, use the local admin script if you have MongoDB credentials in `.env.local`:

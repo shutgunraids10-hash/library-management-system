@@ -14,9 +14,10 @@ function json(res, status, body) {
 function setupConfig() {
   const name = String(process.env.INITIAL_ADMIN_NAME || "").trim().slice(0, 120);
   const email = String(process.env.INITIAL_ADMIN_EMAIL || "").trim().toLowerCase().slice(0, 254);
+  const previousEmail = String(process.env.INITIAL_ADMIN_PREVIOUS_EMAIL || "").trim().toLowerCase().slice(0, 254);
   const token = String(process.env.INITIAL_ADMIN_SETUP_TOKEN || "");
   const sessionSecretReady = String(process.env.SESSION_SECRET || "").length >= 32;
-  return { name, email, token, enabled: Boolean(name && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && token.length >= 32 && sessionSecretReady) };
+  return { name, email, previousEmail, token, enabled: Boolean(name && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && token.length >= 32 && sessionSecretReady) };
 }
 
 function validSetupToken(provided, expected) {
@@ -33,8 +34,15 @@ module.exports = async function setup(req, res) {
   if (req.method === "GET") {
     if (!config.enabled) return json(res, 200, { available: false });
     try {
-      const count = await (await getDb()).collection("users").countDocuments({}, { limit: 1 });
-      return json(res, 200, { available: count === 0, name: count === 0 ? config.name : undefined, email: count === 0 ? config.email : undefined });
+      const users = (await getDb()).collection("users");
+      const count = await users.countDocuments({}, { limit: 1 });
+      if (!count) return json(res, 200, { available: true, action: "create", name: config.name, email: config.email });
+      const previousAdmin = config.previousEmail && config.previousEmail !== config.email
+        ? await users.findOne({ email: config.previousEmail, role: "administrator", status: { $ne: "disabled" } }, { projection: { _id: 1 } })
+        : null;
+      return json(res, 200, previousAdmin
+        ? { available: true, action: "change-email", name: config.name, email: config.email, previousEmail: config.previousEmail }
+        : { available: false });
     } catch (error) {
       console.error("SmartLib setup status failed:", error.message);
       return json(res, 503, { error: "Could not check first-account setup." });
@@ -49,6 +57,24 @@ module.exports = async function setup(req, res) {
   if (!validSetupToken(req.headers["x-smartlib-setup-token"], config.token)) return json(res, 403, { error: "Setup token is invalid." });
 
   const { password, confirmation } = req.body || {};
+  if (req.body?.action === "change-email") {
+    if (!config.previousEmail || config.previousEmail === config.email) return json(res, 409, { error: "No previous administrator email is configured for update." });
+    try {
+      const users = (await getDb()).collection("users");
+      const account = await users.findOneAndUpdate(
+        { email: config.previousEmail, role: "administrator", status: { $ne: "disabled" } },
+        { $set: { email: config.email, updatedAt: new Date() } },
+        { returnDocument: "after", projection: { passwordHash: 0 } }
+      );
+      if (!account) return json(res, 409, { error: "The previous administrator account was not found or is disabled." });
+      setSession(req, res, account);
+      return json(res, 200, { updated: true, user: { id: String(account._id), name: account.name, email: account.email, role: account.role } });
+    } catch (error) {
+      if (error.code === 11000) return json(res, 409, { error: "An account already uses the new email address." });
+      console.error("SmartLib administrator email update failed:", error.message);
+      return json(res, 503, { error: "Could not update the administrator email." });
+    }
+  }
   if (typeof password !== "string" || password.length < 12 || password.length > 256 || password !== confirmation) return json(res, 400, { error: "Use a matching password with at least 12 characters." });
 
   try {
