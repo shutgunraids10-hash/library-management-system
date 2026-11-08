@@ -1,8 +1,9 @@
 const { ObjectId } = require("mongodb");
 const { randomBytes, scrypt: scryptCb } = require("node:crypto");
 const { promisify } = require("node:util");
-const { getDb } = require("../lib/mongodb");
+const { getDb, getClient } = require("../lib/mongodb");
 const { readSession } = require("./session");
+const { issueReservationLoan } = require("../lib/loans");
 const scrypt = promisify(scryptCb);
 
 const allowed = new Set(["books", "loans", "reservations", "users", "settings"]);
@@ -148,12 +149,28 @@ module.exports = async function records(req, res) {
     const inputUpdates = updates && typeof updates === "object" && !Array.isArray(updates) ? updates : {};
     if (type === "loans" && Object.hasOwn(inputUpdates, "status") && inputUpdates.status !== "returned") return json(res, 400, { error: "A loan can only be marked returned." });
     if (type === "reservations" && Object.hasOwn(inputUpdates, "status") && !["approved", "declined"].includes(inputUpdates.status)) return json(res, 400, { error: "Choose approved or declined for a reservation." });
+    if (type === "reservations" && Object.hasOwn(inputUpdates, "action") && inputUpdates.action !== "checkout-approved") return json(res, 400, { error: "Choose a valid request action." });
     const allowedFields = type === "books" ? ["title", "author", "category", "isbn", "shelf", "copies"] : type === "loans" ? ["status", "dueAt"] : ["status"];
     const safe = Object.fromEntries(Object.entries(inputUpdates).filter(([key]) => allowedFields.includes(key)));
-    if (!Object.keys(safe).length) return json(res, 400, { error: "No editable fields were provided." });
+    if (!Object.keys(safe).length && !(type === "reservations" && inputUpdates.action === "checkout-approved")) return json(res, 400, { error: "No editable fields were provided." });
     safe.updatedAt = new Date();
     try {
       const db = await getDb();
+      if (type === "reservations" && (safe.status === "approved" || inputUpdates.action === "checkout-approved")) {
+        try {
+          const loan = await issueReservationLoan({
+            db,
+            client: await getClient(),
+            reservationId: id,
+            reviewer: user,
+            expectedStatus: safe.status === "approved" ? "pending" : "approved"
+          });
+          return json(res, 200, { updated: true, loan });
+        } catch (error) {
+          if (error.httpStatus) return json(res, error.httpStatus, { error: error.message });
+          throw error;
+        }
+      }
       if (type === "books") {
         for (const [field, max] of Object.entries({ title: 160, author: 120, category: 80, isbn: 32, shelf: 32 })) {
           if (Object.hasOwn(safe, field)) {
@@ -193,6 +210,7 @@ module.exports = async function records(req, res) {
       const result = await db.collection(type).updateOne({ _id: new ObjectId(id) }, { $set: safe });
       return result.matchedCount ? json(res, 200, { updated: true }) : json(res, 404, { error: "Record not found." });
     } catch (error) {
+      if (error.httpStatus) return json(res, error.httpStatus, { error: error.message });
       console.error(`SmartLib ${type} update failed:`, error.message);
       return json(res, 503, { error: "Could not update the record in MongoDB." });
     }

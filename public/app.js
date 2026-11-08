@@ -11,7 +11,7 @@ const sections = {
 };
 const titles = { overview: "Overview", catalog: "Find a book", "my-library": "My library", reservations: "Reservations", inventory: "Book inventory", transactions: "Borrowing & returns", reports: "Reports & activity", users: "People & access", settings: "System settings" };
 const state = {
-  role: "student", page: "login", query: "", category: "All categories", filter: "all", modal: null,
+  role: "student", page: "login", query: "", category: "All categories", filter: "all", reportRange: 7, modal: null,
   books: [], loans: [], reservations: [],
   settings: { libraryName: "SmartLib", contactEmail: "", loanPeriod: 14 },
   toast: "", health: "checking", liveUser: null, users: [], setupAvailable: false, setupChecked: false, setupName: "", setupEmail: "", setupAction: "create", previousAdminEmail: ""
@@ -155,15 +155,12 @@ function renderActivity() {
   if (state.liveUser) {
     const events = [
       ...state.loans.map((loan) => ({ date: new Date(loan.returnedAt || loan.checkedOutAt || loan.updatedAt || loan.createdAt || 0), title: loan.status === "returned" ? `${loan.user || "Member"} returned ${loan.title}` : `${loan.user || "Member"} borrowed ${loan.title}`, detail: loan.status === "returned" ? "Returned" : `Due ${formatDate(loan.due || loan.dueAt)}`, type: loan.status === "returned" ? "returned" : "borrowed", mark: loan.status === "returned" ? "↩" : "↗" })),
-      ...state.reservations.map((reservation) => ({ date: new Date(reservation.createdAt || 0), title: `${reservation.user || "Member"} requested ${reservation.title || reservation.bookTitle || "a book"}`, detail: formatDate(reservation.createdAt), type: reservation.status === "pending" ? "pending" : "returned", mark: "◷" }))
+      ...state.reservations.map((reservation) => ({ date: new Date(reservation.updatedAt || reservation.createdAt || 0), title: `${reservation.user || "Member"} ${reservation.status === "pending" ? "requested" : reservation.status === "approved" ? "request approved for" : "request declined for"} ${reservation.title || reservation.bookTitle || "a book"}`, detail: reservation.status === "pending" ? formatDate(reservation.createdAt) : `${reservation.status} · ${formatDate(reservation.reviewedAt || reservation.updatedAt)}`, type: reservation.status, mark: reservation.status === "approved" ? "✓" : reservation.status === "declined" ? "×" : "◷" }))
     ].sort((a, b) => b.date - a.date).slice(0, 4);
     if (!events.length) return `<div class="mini-empty">Your library activity will appear here.</div>`;
     return `<div class="activity-list">${events.map((event) => `<div class="activity-row"><span class="activity-mark ${event.type}">${event.mark}</span><div><strong>${esc(event.title)}</strong><span>${esc(event.detail)}</span></div><span class="activity-kind">${esc(event.type)}</span></div>`).join("")}</div>`;
   }
-  const events = [
-    ["↗", "You borrowed The Little Prince", "Today · 10:24 AM", "borrowed"], ["◷", "Reservation for The Psychology of Money", "Yesterday · 3:18 PM", "pending"], ["↩", "You returned Introduction to Biology", "Nov 4 · 1:42 PM", "returned"]
-  ];
-  return `<div class="activity-list">${events.map(([mark, title, time, type]) => `<div class="activity-row"><span class="activity-mark ${type}">${mark}</span><div><strong>${title}</strong><span>${time}</span></div><span class="activity-kind">${type}</span></div>`).join("")}</div>`;
+  return `<div class="mini-empty">Sign in to see live library activity.</div>`;
 }
 function renderCatalog() {
   let books = state.books.filter((b) => b.status !== "archived");
@@ -173,15 +170,15 @@ function renderCatalog() {
   return `<section class="catalog-tools"><label class="catalog-search"><span>⌕</span><input id="catalog-search" placeholder="Search by title, author, or ISBN" value="${esc(state.query)}"/><kbd>/</kbd></label><select id="category-filter" aria-label="Filter by category">${["All categories", ...new Set(state.books.map((b) => b.category))].map((c) => `<option ${state.category === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></section><div class="filter-row"><div><button class="filter-pill ${state.filter === "all" ? "selected" : ""}" data-filter="all">All books <span>${state.books.length}</span></button><button class="filter-pill ${state.filter === "available" ? "selected" : ""}" data-filter="available">Available now</button></div><span class="results-label">${books.length} ${books.length === 1 ? "book" : "books"}</span></div><section class="panel catalog-panel">${bookList(books, "catalog")}</section>`;
 }
 function renderMyLibrary() {
-  const mine = state.liveUser ? state.loans : state.loans.filter((l) => l.user === names.student || l.user === getCurrentName());
-  const loans = mine.length ? mine : state.liveUser ? [] : state.loans.slice(0, 2);
+  const mine = state.loans;
+  const loans = mine;
   const returned = mine.filter((l) => l.status === "returned");
   return `<div class="substats"><div><span>Currently borrowed</span><strong>${loans.filter((l) => l.status !== "returned").length}</strong></div><div><span>Due this week</span><strong>${loans.filter((l) => { const dueDate = new Date(l.due || l.dueAt); return l.status !== "returned" && dueDate >= new Date() && dueDate <= Date.now() + 7 * 86400000; }).length}</strong></div><div><span>Books read</span><strong>${returned.length}</strong></div></div><section class="panel table-panel"><div class="panel-heading"><div><h2>Borrowed books</h2><p>Your current checkouts and due dates.</p></div><button class="btn btn-outline btn-sm" data-action="browse">Find a book</button></div>${table(["Book", "Borrowed", "Due date", "Status"], loans.map((l) => `<tr><td><div class="table-book"><span class="table-book-icon">▤</span><div><strong>${esc(l.title)}</strong><small>${esc(l.author || "Library collection")}</small></div></div></td><td>${l.checkedOutAt ? formatDate(l.checkedOutAt) : "—"}</td><td>${formatDate(l.due || l.dueAt)}</td><td>${statusPill(l.status)}</td></tr>`))}</section><section class="panel table-panel lower-panel"><div class="panel-heading"><div><h2>Reading history</h2><p>Books you’ve already returned.</p></div></div>${returned.length ? table(["Book", "Returned", "Status"], returned.map((l) => `<tr><td>${esc(l.title)}</td><td>${formatDate(l.returnedAt)}</td><td>${statusPill("returned")}</td></tr>`)) : `<div class="empty-state">Your returned books will show up here.</div>`}</section>`;
 }
 function renderReservations() {
-  const mine = state.role === "student" ? state.reservations.filter((r) => r.user === names.student || r.user === getCurrentName() || r.userId === state.liveUser?.id) : state.reservations;
+  const mine = state.role === "student" ? state.reservations.filter((r) => r.userId === state.liveUser?.id || r.user === getCurrentName()) : state.reservations;
   const rows = state.filter === "pending" ? mine.filter((r) => r.status === "pending") : mine;
-  return `<div class="filter-row"><div><button class="filter-pill ${state.filter !== "pending" ? "selected" : ""}" data-filter="all">${state.role === "student" ? "My requests" : "All requests"} <span>${mine.length}</span></button>${state.role !== "student" ? `<button class="filter-pill ${state.filter === "pending" ? "selected" : ""}" data-filter="pending">Needs review <span>${mine.filter((r) => r.status === "pending").length}</span></button>` : ""}</div>${state.role === "student" ? `<button class="btn btn-primary btn-sm" data-action="browse">＋ Find a book</button>` : ""}</div><section class="panel table-panel">${table(state.role === "student" ? ["Book", "Requested", "Request ID", "Status"] : ["Request", "Member", "Requested", "Status", "Action"], rows.map((r) => `<tr><td><div class="table-book"><span class="table-book-icon">▤</span><div><strong>${esc(r.title || r.bookTitle || titleForBook(r.bookId))}</strong><small>${state.role === "student" ? "Library collection" : esc(r.id)}</small></div></div></td>${state.role !== "student" ? `<td>${esc(r.user || r.userName || "Member")}</td>` : ""}<td>${esc(r.created || formatDate(r.createdAt) || "—")}</td>${state.role === "student" ? `<td>${esc(r.id)}</td>` : ""}<td>${statusPill(r.status)}</td>${state.role !== "student" ? `<td>${r.status === "pending" ? `<button class="text-button" data-action="approve" data-id="${esc(r.id)}">Approve</button><button class="text-button danger-text" data-action="decline" data-id="${esc(r.id)}">Decline</button>` : "—"}</td>` : ""}</tr>`))}</section>`;
+  return `<div class="filter-row"><div><button class="filter-pill ${state.filter !== "pending" ? "selected" : ""}" data-filter="all">${state.role === "student" ? "My requests" : "All requests"} <span>${mine.length}</span></button>${state.role !== "student" ? `<button class="filter-pill ${state.filter === "pending" ? "selected" : ""}" data-filter="pending">Needs review <span>${mine.filter((r) => r.status === "pending").length}</span></button>` : ""}</div>${state.role === "student" ? `<button class="btn btn-primary btn-sm" data-action="browse">＋ Find a book</button>` : ""}</div><section class="panel table-panel">${table(state.role === "student" ? ["Book", "Requested", "Request ID", "Status"] : ["Request", "Member", "Requested", "Status", "Action"], rows.map((r) => `<tr><td><div class="table-book"><span class="table-book-icon">▤</span><div><strong>${esc(r.title || r.bookTitle || titleForBook(r.bookId))}</strong><small>${state.role === "student" ? "Library collection" : esc(r.id)}</small></div></div></td>${state.role !== "student" ? `<td>${esc(r.user || r.userName || "Member")}</td>` : ""}<td>${esc(r.created || formatDate(r.createdAt) || "—")}</td>${state.role === "student" ? `<td>${esc(r.id)}</td>` : ""}<td>${statusPill(r.status)}</td>${state.role !== "student" ? `<td>${r.status === "pending" ? `<button class="text-button" data-action="approve" data-id="${esc(r.id)}">Approve</button><button class="text-button danger-text" data-action="decline" data-id="${esc(r.id)}">Decline</button>` : r.status === "approved" && !r.loanId ? `<button class="text-button" data-action="checkout-approved" data-id="${esc(r.id)}">Create loan</button>` : r.loanId ? "Loan created" : "—"}</td>` : ""}</tr>`))}</section>`;
 }
 function renderInventory() {
   let books = state.books.filter((b) => b.status !== "archived").filter((b) => !state.query || `${b.title} ${b.author} ${b.isbn}`.toLowerCase().includes(state.query.toLowerCase()));
@@ -196,8 +193,39 @@ function renderTransactions() {
   return `<div class="substats"><div><span>Active loans</span><strong>${allRows.filter((l) => l.status === "borrowed").length}</strong></div><div><span>Overdue</span><strong class="text-rose">${allRows.filter((l) => l.status === "overdue").length}</strong></div><div><span>Returned</span><strong>${allRows.filter((l) => l.status === "returned").length}</strong></div></div><div class="filter-row"><div><button class="filter-pill ${state.filter === "all" ? "selected" : ""}" data-filter="all">All activity <span>${allRows.length}</span></button><button class="filter-pill ${state.filter === "borrowed" ? "selected" : ""}" data-filter="borrowed">Currently borrowed</button><button class="filter-pill ${state.filter === "overdue" ? "selected" : ""}" data-filter="overdue">Overdue</button></div><button class="btn btn-primary btn-sm" data-action="checkout">＋ Check out a book</button></div><section class="panel table-panel">${table(["Transaction", "Member", "Due date", "Status", ""], rows.map((l) => `<tr><td><div class="table-book"><span class="table-book-icon">▤</span><div><strong>${esc(l.title || titleForBook(l.bookId))}</strong><small>${esc(l.id)}</small></div></div></td><td><div class="member-cell"><span class="avatar mini">${initials(l.user || l.userName || "Member")}</span><div><strong>${esc(l.user || l.userName || "Member")}</strong><small>${esc(l.email || "")}</small></div></div></td><td>${formatDate(l.due || l.dueAt)}</td><td>${statusPill(l.status)}</td><td>${l.status !== "returned" ? `<button class="text-button" data-action="return-book" data-id="${esc(l.id)}">Mark returned</button>` : ""}</td></tr>`))}</section>`;
 }
 function renderReports() {
-  const popular = [...state.books].sort((a, b) => b.copies - a.copies).slice(0, 5);
-  return `<div class="report-grid"><section class="panel report-panel"><div class="panel-heading"><div><h2>Library activity</h2><p>Checkout activity over the last 7 days.</p></div><select class="small-select"><option>Last 7 days</option><option>Last 30 days</option></select></div><div class="chart"><div class="chart-y"><span>60</span><span>40</span><span>20</span><span>0</span></div><div class="chart-area"><div class="chart-grid"></div><svg viewBox="0 0 600 190" preserveAspectRatio="none" aria-label="Weekly activity chart"><defs><linearGradient id="fade" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#2da88d" stop-opacity=".2"/><stop offset="1" stop-color="#2da88d" stop-opacity="0"/></linearGradient></defs><path d="M0,140 C35,132 45,105 90,116 S145,88 180,102 230,57 265,75 312,99 350,74 400,98 440,60 490,82 530,37 575,51 595,25 V190 H0Z" fill="url(#fade)"/><path d="M0,140 C35,132 45,105 90,116 S145,88 180,102 230,57 265,75 312,99 350,74 400,98 440,60 490,82 530,37 575,51 595,25" fill="none" stroke="#2da88d" stroke-width="3" vector-effect="non-scaling-stroke"/></svg><div class="chart-x"><span>Nov 2</span><span>Nov 3</span><span>Nov 4</span><span>Nov 5</span><span>Nov 6</span><span>Nov 7</span><span>Nov 8</span></div></div></div></section><section class="panel report-panel"><div class="panel-heading"><div><h2>Collection snapshot</h2><p>Books by the numbers.</p></div></div><div class="snapshot"><div><span>Available copies</span><strong>${state.books.reduce((a,b)=>a+Number(b.available||0),0)}</strong><i class="snapshot-bar mint-bar"></i></div><div><span>Currently borrowed</span><strong>${countDue()}</strong><i class="snapshot-bar blue-bar"></i></div><div><span>Pending reservations</span><strong>${state.reservations.filter(r=>r.status==="pending").length}</strong><i class="snapshot-bar peach-bar"></i></div></div></section></div><section class="panel table-panel lower-panel"><div class="panel-heading"><div><h2>Collection highlights</h2><p>Popular titles in the library.</p></div></div>${table(["Book", "Category", "Copies", "Available"], popular.map(b=>`<tr><td><strong>${esc(b.title)}</strong><small class="block-muted">${esc(b.author)}</small></td><td>${esc(b.category)}</td><td>${b.copies}</td><td>${b.available}</td></tr>`))}</section>`;
+  const borrowCounts = new Map();
+  for (const loan of state.loans) {
+    const book = state.books.find((item) => item.id === loan.bookId || item.title === loan.title);
+    if (book) borrowCounts.set(book.id, (borrowCounts.get(book.id) || 0) + 1);
+  }
+  const popular = [...state.books].sort((a, b) => (borrowCounts.get(b.id) || 0) - (borrowCounts.get(a.id) || 0)).slice(0, 5);
+  const range = state.reportRange === 30 ? 30 : 7;
+  const rangeLabel = range === 30 ? "30 days" : "7 days";
+  return `<div class="report-grid"><section class="panel report-panel"><div class="panel-heading"><div><h2>Circulation activity</h2><p>Actual checkouts and returns over the last ${rangeLabel}.</p></div><select id="report-range" class="small-select" aria-label="Activity date range"><option value="7" ${range === 7 ? "selected" : ""}>Last 7 days</option><option value="30" ${range === 30 ? "selected" : ""}>Last 30 days</option></select></div>${renderActivityChart()}<div class="chart-legend"><span><i class="legend-checkout"></i>Checkouts</span><span><i class="legend-return"></i>Returns</span></div></section><section class="panel report-panel"><div class="panel-heading"><div><h2>Collection snapshot</h2><p>Live totals from MongoDB.</p></div></div><div class="snapshot"><div><span>Available copies</span><strong>${state.books.reduce((a,b)=>a+Number(b.available||0),0)}</strong><i class="snapshot-bar mint-bar"></i></div><div><span>Currently borrowed</span><strong>${countDue()}</strong><i class="snapshot-bar blue-bar"></i></div><div><span>Pending reservations</span><strong>${state.reservations.filter(r=>r.status==="pending").length}</strong><i class="snapshot-bar peach-bar"></i></div></div></section></div><section class="panel table-panel lower-panel"><div class="panel-heading"><div><h2>Most borrowed titles</h2><p>Ranked by saved loan records.</p></div></div>${table(["Book", "Category", "Checkouts", "Available"], popular.map(b=>`<tr><td><strong>${esc(b.title)}</strong><small class="block-muted">${esc(b.author)}</small></td><td>${esc(b.category)}</td><td>${borrowCounts.get(b.id) || 0}</td><td>${b.available}</td></tr>`))}</section>`;
+}
+function renderActivityChart() {
+  const count = state.reportRange === 30 ? 30 : 7;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const start = new Date(today); start.setDate(start.getDate() - count + 1);
+  const keyOf = (date) => { const d = new Date(date); return Number.isNaN(d.getTime()) ? "" : `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
+  const dayKey = (date) => `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
+  const days = Array.from({length: count}, (_, i) => { const date = new Date(start); date.setDate(start.getDate()+i); return { date, key: dayKey(date), checkouts: 0, returns: 0 }; });
+  const buckets = new Map(days.map((day) => [day.key, day]));
+  for (const loan of state.loans) {
+    const checkoutDay = buckets.get(keyOf(loan.checkedOutAt || loan.createdAt));
+    if (checkoutDay) checkoutDay.checkouts++;
+    const returnDay = loan.returnedAt && buckets.get(keyOf(loan.returnedAt));
+    if (returnDay) returnDay.returns++;
+  }
+  const peak = Math.max(1, ...days.flatMap((day) => [day.checkouts, day.returns]));
+  const max = Math.max(3, Math.ceil(peak / 5) * 5);
+  const chartWidth = 600, chartHeight = 154, x = (i) => count === 1 ? chartWidth / 2 : i * chartWidth / (count - 1);
+  const y = (value) => chartHeight - value / max * (chartHeight - 12) - 4;
+  const pathFor = (key) => days.map((day, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(day[key]).toFixed(1)}`).join(" ");
+  const tickLabels = [max, Math.round(max * 2 / 3), Math.round(max / 3), 0];
+  const labelIndexes = Array.from({length: Math.min(7, count)}, (_, i) => Math.round(i * (count - 1) / (Math.min(7, count) - 1 || 1)));
+  const labels = labelIndexes.map((i) => `<span>${esc(new Intl.DateTimeFormat("en", {month:"short",day:"numeric"}).format(days[i].date))}</span>`).join("");
+  return `<div class="chart"><div class="chart-y">${tickLabels.map((n) => `<span>${n}</span>`).join("")}</div><div class="chart-area"><div class="chart-grid"></div><svg viewBox="0 0 600 154" preserveAspectRatio="none" role="img" aria-label="MongoDB checkouts and returns for the last ${count} days"><path d="${pathFor("checkouts")}" fill="none" stroke="#2da88d" stroke-width="3" vector-effect="non-scaling-stroke"/><path d="${pathFor("returns")}" fill="none" stroke="#8792d0" stroke-width="3" vector-effect="non-scaling-stroke"/></svg><div class="chart-x">${labels}</div></div></div>`;
 }
 function renderUsers() { const users = state.filter === "students" ? state.users.filter((u) => u.role === "student") : state.filter === "staff" ? state.users.filter((u) => u.role !== "student") : state.users; return `<div class="filter-row"><div><button class="filter-pill ${state.filter === "all" ? "selected" : ""}" data-filter="all">All accounts <span>${state.users.length}</span></button><button class="filter-pill ${state.filter === "students" ? "selected" : ""}" data-filter="students">Students</button><button class="filter-pill ${state.filter === "staff" ? "selected" : ""}" data-filter="staff">Staff</button></div><button class="btn btn-primary btn-sm" data-action="add-user">＋ Add an account</button></div><section class="panel table-panel">${table(["Member", "Role", "Access", ""], users.map((u)=>`<tr><td><div class="member-cell"><span class="avatar mini">${initials(u.name)}</span><div><strong>${esc(u.name)}</strong><small>${esc(u.email)}</small></div></div></td><td>${roleName(u.role)}</td><td>${statusPill((u.status || "active").toLowerCase())}</td><td><button class="text-button" data-action="toggle-user" data-id="${esc(u.id || state.users.indexOf(u))}">${u.status === "disabled" ? "Restore access" : "Disable access"}</button></td></tr>`))}</section>`; }
 function renderSettings() { return `<div class="settings-grid"><section class="panel settings-panel"><div class="panel-heading"><div><h2>Library details</h2><p>Basic information members see around the workspace.</p></div></div><label>Library name<input name="libraryName" value="${esc(state.settings.libraryName)}" maxlength="120"/></label><label>Contact email<input name="contactEmail" type="email" value="${esc(state.settings.contactEmail)}" maxlength="254"/></label><label>Default loan period<select name="loanPeriod"><option value="7" ${Number(state.settings.loanPeriod)===7?"selected":""}>7 days</option><option value="14" ${Number(state.settings.loanPeriod)===14?"selected":""}>14 days</option><option value="21" ${Number(state.settings.loanPeriod)===21?"selected":""}>21 days</option></select></label><button class="btn btn-primary" data-action="save-settings">Save changes</button></section><section class="panel settings-panel"><div class="panel-heading"><div><h2>Database</h2><p>Application data source.</p></div></div><div class="database-status"><span class="db-orb ${state.health}"></span><div><strong>${state.health === "live" ? "MongoDB connected" : "Database unavailable"}</strong><span>${state.health === "live" ? "Live collections are ready." : "Live sign-in and saved records require MongoDB."}</span></div></div><p class="settings-hint">SmartLib uses MongoDB for accounts, books, loans, reservations, and library settings. Connection secrets stay on the server.</p><button class="btn btn-outline" data-action="refresh-health">Check connection</button></section></div>`; }
@@ -224,6 +252,7 @@ function bindEvents() {
   document.querySelectorAll("[data-filter]").forEach((el) => el.addEventListener("click", () => { state.filter = el.dataset.filter; render(); }));
   for (const id of ["global-search", "catalog-search"]) { const input = document.getElementById(id); if (input) input.addEventListener("input", () => { state.query = input.value; if (id === "global-search" && state.query && state.page !== "catalog" && state.page !== "inventory") { state.page = state.role === "student" ? "catalog" : "inventory"; state.filter = "all"; } renderKeepingFocus(id, state.query); }); }
   const cat = document.getElementById("category-filter"); if (cat) cat.addEventListener("change", () => { state.category = cat.value; render(); });
+  const reportRange = document.getElementById("report-range"); if (reportRange) reportRange.addEventListener("change", () => { state.reportRange = Number(reportRange.value) === 30 ? 30 : 7; render(); });
   const form = document.getElementById("modal-form"); if (form) form.addEventListener("submit", submitModal);
   const loginForm = document.getElementById("login-form"); if (loginForm) loginForm.addEventListener("submit", async (event) => { event.preventDefault(); await authenticate(Object.fromEntries(new FormData(loginForm))); });
   const setupForm = document.getElementById("setup-form"); if (setupForm) setupForm.addEventListener("submit", createInitialAdmin);
@@ -242,6 +271,7 @@ function action(name, id) {
   if (name === "close-modal") { state.modal = null; render(); return; }
   if (name === "reserve") { reserveBook(id); return; }
   if (name === "approve" || name === "decline") { updateReservation(id, name === "approve" ? "approved" : "declined"); return; }
+  if (name === "checkout-approved") { issueApprovedReservation(id); return; }
   if (name === "return-book") { returnLoan(id); return; }
   if (name === "help") { toast("Help center is coming soon."); return; }
   if (name === "profile") { if (state.liveUser) signOut(); return; }
@@ -305,7 +335,7 @@ async function authenticate(credentials) {
     const result = await response.json();
     if (!response.ok) { toast(result.error || "Sign in failed."); return false; }
     state.liveUser = result.user; state.role = result.user.role; state.health = "live"; state.page = "overview"; state.modal = null; history.replaceState({}, "", "/");
-    await restoreRecords(); toast(`Welcome, ${result.user.name} · ${roleName(result.user.role)} workspace.`); return true;
+    await restoreRecords(true); toast(`Welcome, ${result.user.name} · ${roleName(result.user.role)} workspace.`); return true;
   } catch { toast("Could not reach the library service."); return false; }
 }
 function toast(message) { state.toast = message; render(); setTimeout(() => { state.toast = ""; document.querySelector(".toast")?.classList.remove("visible"); }, 2600); }
@@ -320,7 +350,7 @@ async function saveSettings() {
 }
 function checkHealth() { Promise.all([fetch("/api/health"), fetch("/api/session")]).then(async ([healthResponse, sessionResponse]) => { const health = await healthResponse.json(); const session = await sessionResponse.json(); state.health = health.database === "connected" && session.signInConfigured ? "live" : "unavailable"; render(); }).catch(() => { state.health = "unavailable"; render(); }); }
 async function checkSetup() { try { const response = await fetch("/api/setup"); const result = await response.json(); state.setupAvailable = Boolean(response.ok && result.available); state.setupName = result.name || ""; state.setupEmail = result.email || ""; state.setupAction = result.action || "create"; state.previousAdminEmail = result.previousEmail || ""; } catch { state.setupAvailable = false; } state.setupChecked = true; render(); }
-async function restoreSession() { try { const response = await fetch("/api/session"); const data = await response.json(); if (data.authenticated && data.user) { state.liveUser = data.user; state.role = data.user.role; state.health = "live"; state.page = "overview"; history.replaceState({}, "", "/"); await restoreRecords(); } } catch { state.health = "unavailable"; render(); } }
+async function restoreSession() { try { const response = await fetch("/api/session"); const data = await response.json(); if (data.authenticated && data.user) { state.liveUser = data.user; state.role = data.user.role; state.health = "live"; state.page = "overview"; history.replaceState({}, "", "/"); await restoreRecords(true); } } catch { state.health = "unavailable"; render(); } }
 
 async function createInitialAdmin(event) {
   event.preventDefault();
@@ -333,7 +363,7 @@ async function createInitialAdmin(event) {
     const result = await response.json();
     if (!response.ok) return toast(result.error || "First-account setup failed.");
     state.liveUser = result.user; state.role = result.user.role; state.health = "live"; state.page = "overview"; state.setupAvailable = false; history.replaceState({}, "", "/");
-    await restoreRecords();
+    await restoreRecords(true);
     toast(`Welcome, ${result.user.name} · Administrator workspace.`);
   } catch { toast("Could not reach first-account setup."); }
 }
@@ -365,8 +395,17 @@ async function toggleUser(id) {
 async function updateReservation(id, status) {
   const r = state.reservations.find(x => x.id === id);
   if (!r) return;
-  if (state.liveUser) { const result = await apiRecord("reservations", "PATCH", { id: r._id || r.id, updates: { status, reviewedAt: new Date(), reviewedBy: state.liveUser.name } }); if (!result) return; }
-  r.status = status; toast(`Request ${status}.`); render();
+  if (!state.liveUser) return toast("Sign in to review requests.");
+  const result = await apiRecord("reservations", "PATCH", { id: r._id || r.id, updates: { status } });
+  if (!result) return;
+  await restoreRecords(true);
+  toast(status === "approved" ? "Request approved and book checked out." : "Request declined.");
+}
+async function issueApprovedReservation(id) {
+  const result = await apiRecord("reservations", "PATCH", { id, updates: { action: "checkout-approved" } });
+  if (!result) return;
+  await restoreRecords(true);
+  toast("Book checked out to the member.");
 }
 async function returnLoan(id) {
   const loan = state.loans.find(x => x.id === id || x._id === id);
@@ -375,11 +414,32 @@ async function returnLoan(id) {
   if (state.liveUser) { const result = await apiRecord("loans", "PATCH", { id: loan._id || loan.id, updates: { status: "returned", returnedAt } }); if (!result) return; }
   loan.status = "returned"; loan.returnedAt = returnedAt; const book = state.books.find(x => x.title === loan.title); if (book) book.available = Math.min(book.copies, book.available + 1); toast("Book marked as returned."); render();
 }
-async function restoreRecords() {
+async function restoreRecords(forceRender = false) {
+  const before = JSON.stringify([state.books, state.loans, state.reservations, state.users, state.settings]);
   const types = state.role === "student" ? ["books", "loans", "reservations"] : state.role === "administrator" ? ["books", "loans", "reservations", "users", "settings"] : ["books", "loans", "reservations", "users"];
-  const results = await Promise.all(types.map(async type => { const response = await fetch(`/api/records?type=${type}`); return response.ok ? [type, await response.json()] : [type, { items: [] }]; }));
-  for (const [type, data] of results) { const items = data.items || []; if (type === "books") state.books = items.map(b => ({ ...b, id: b._id })); if (type === "loans") state.loans = items.map(l => ({ ...l, id: l._id, title: l.title || titleForBook(l.bookId), user: l.user || l.userName || "Member", due: l.dueAt, status: l.status === "borrowed" && l.dueAt && new Date(l.dueAt) < new Date() ? "overdue" : l.status })); if (type === "reservations") state.reservations = items.map(r => ({ ...r, id: r._id, title: r.title || r.bookTitle || titleForBook(r.bookId), user: r.user || r.userName || "Member", created: r.created || r.createdAt })); if (type === "users") state.users = items.map(u => ({ ...u, id: u._id, role: u.role, status: u.status || "active" })); if (type === "settings" && data.item) state.settings = data.item; }
-  render();
+  const results = await Promise.all(types.map(async type => {
+    try {
+      const response = await fetch(`/api/records?type=${type}`, { cache: "no-store" });
+      return response.ok ? [type, await response.json()] : [type, null];
+    } catch { return [type, null]; }
+  }));
+  for (const [type, data] of results) {
+    if (!data) continue;
+    const items = data.items || [];
+    if (type === "books") state.books = items.map(b => ({ ...b, id: b._id }));
+    if (type === "loans") state.loans = items.map(l => ({ ...l, id: l._id, title: l.title || titleForBook(l.bookId), user: l.user || l.userName || "Member", due: l.dueAt, status: l.status === "borrowed" && l.dueAt && new Date(l.dueAt) < new Date() ? "overdue" : l.status }));
+    if (type === "reservations") state.reservations = items.map(r => ({ ...r, id: r._id, title: r.title || r.bookTitle || titleForBook(r.bookId), user: r.user || r.userName || "Member", created: r.created || r.createdAt }));
+    if (type === "users") state.users = items.map(u => ({ ...u, id: u._id, role: u.role, status: u.status || "active" }));
+    if (type === "settings" && data.item) state.settings = data.item;
+  }
+  const after = JSON.stringify([state.books, state.loans, state.reservations, state.users, state.settings]);
+  if (forceRender || before !== after) render();
+}
+let liveRefreshPromise = null;
+async function refreshLiveRecords() {
+  if (!state.liveUser || document.hidden || liveRefreshPromise) return;
+  liveRefreshPromise = restoreRecords().finally(() => { liveRefreshPromise = null; });
+  await liveRefreshPromise;
 }
 async function signOut() {
   try { await fetch("/api/session", { method: "DELETE" }); } catch { /* local state is cleared even if the request fails */ }
@@ -397,3 +457,6 @@ document.addEventListener("keydown", keyHandler);
 checkHealth();
 checkSetup();
 restoreSession();
+window.setInterval(refreshLiveRecords, 12000);
+window.addEventListener("focus", refreshLiveRecords);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshLiveRecords(); });
