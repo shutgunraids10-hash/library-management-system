@@ -1,6 +1,7 @@
 const { createHmac, randomBytes, scrypt: scryptCb, timingSafeEqual } = require("node:crypto");
 const { promisify } = require("node:util");
 const { getDb } = require("../lib/mongodb");
+const { ObjectId } = require("mongodb");
 const scrypt = promisify(scryptCb);
 const COOKIE = "smartlib_session";
 const MAX_AGE = 60 * 60 * 24 * 7;
@@ -14,7 +15,7 @@ function cookieValue(req) {
   return cookies[COOKIE];
 }
 
-function readSession(req) {
+async function readSession(req) {
   if (!process.env.SESSION_SECRET) return null;
   const token = cookieValue(req);
   if (!token) return null;
@@ -25,16 +26,20 @@ function readSession(req) {
   if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) return null;
   try {
     const session = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
-    return session.exp > Date.now() ? session : null;
+    if (session.exp <= Date.now() || !ObjectId.isValid(session.id)) return null;
+    const account = await (await getDb()).collection("users").findOne({ _id: new ObjectId(session.id), status: { $ne: "disabled" } }, { projection: { passwordHash: 0 } });
+    return account ? { id: String(account._id), name: account.name, email: account.email, role: account.role, exp: session.exp } : null;
   } catch {
     return null;
   }
 }
 
-function setSession(res, user) {
+function setSession(req, res, user) {
   const payload = Buffer.from(JSON.stringify({ id: String(user._id), name: user.name, email: user.email, role: user.role, exp: Date.now() + MAX_AGE * 1000 })).toString("base64url");
   const token = `${payload}.${sign(payload)}`;
-  res.setHeader("Set-Cookie", `${COOKIE}=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${MAX_AGE}`);
+  const forwardedProto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim();
+  const secure = process.env.VERCEL === "1" || forwardedProto === "https" || (!forwardedProto && process.env.NODE_ENV === "production");
+  res.setHeader("Set-Cookie", `${COOKIE}=${token}; HttpOnly; ${secure ? "Secure; " : ""}SameSite=Lax; Path=/; Max-Age=${MAX_AGE}`);
 }
 
 function clearSession(res) {
@@ -51,7 +56,7 @@ function json(res, status, body) {
 module.exports = async function session(req, res) {
   res.setHeader("Cache-Control", "no-store");
   if (req.method === "GET") {
-    const user = readSession(req);
+    const user = await readSession(req);
     return json(res, 200, { authenticated: Boolean(user), user: user ? { id: user.id, name: user.name, email: user.email, role: user.role } : null, databaseConfigured: Boolean(process.env.MONGODB_URI) });
   }
   if (req.method === "DELETE") {
@@ -76,7 +81,7 @@ module.exports = async function session(req, res) {
     const actual = await scrypt(password, salt, 64);
     const expected = Buffer.from(hash, "hex");
     if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) return json(res, 401, { error: "Email or password is incorrect." });
-    setSession(res, user);
+    setSession(req, res, user);
     return json(res, 200, { authenticated: true, user: { id: String(user._id), name: user.name, email: user.email, role: user.role } });
   } catch (error) {
     console.error("SmartLib sign-in failed:", error.message);

@@ -1,6 +1,6 @@
 # SmartLib
 
-SmartLib is a library management workspace based on the student, librarian, administrator, and sign-in screens bundled with the Vercel project. The workspace includes a responsive preview UI, a MongoDB-backed API, and role-aware sign-in.
+SmartLib is a library management workspace with responsive student, librarian, and administrator screens, a MongoDB-backed API, and role-aware sign-in. Books, loans, reservations, member accounts, and library settings are stored in MongoDB when the live database is configured. Preview mode uses local browser storage.
 
 ## Run the preview
 
@@ -28,7 +28,9 @@ Without MongoDB settings, the website opens in preview mode with sample records 
    The script prompts for each account password and stores a salted scrypt hash. The first invocation also creates the unique email, book search, loan, and reservation indexes.
 4. In Vercel Project Settings → Environment Variables, confirm `MONGODB_URI` and `SESSION_SECRET` are set for the environments you will use. Set `MONGODB_DB` only when needed. Keep these values server-only. Redeploy after changing them.
 
-After the database is reachable, the site offers library-account sign-in. Live catalog, loan, and reservation reads and writes go through server-side API functions. Password hashes are excluded from account-list responses. The frontend never receives the MongoDB connection string. If the Vercel project already has these variables, keep their existing values and redeploy the app to activate them.
+After the database is reachable, the site offers library-account sign-in. Live catalog, loan, reservation, account, and settings reads and writes go through server-side API functions. Administrators can create student and librarian accounts with a temporary password, and the password is stored as a salted scrypt hash. Password hashes are excluded from account-list responses. The frontend never receives the MongoDB connection string. If the Vercel project already has these variables, keep their existing values and redeploy the app to activate them.
+
+The `/api` files use Vercel serverless-function routing. Bolt can import and edit this GitHub project, but publishing it with Bolt Cloud while retaining MongoDB requires a backend runtime that can run these server-side routes and safely hold the MongoDB secret. Bolt's built-in database and hosting are separate from this project's MongoDB API.
 
 ## Collections
 
@@ -36,5 +38,6 @@ After the database is reachable, the site offers library-account sign-in. Live c
 - `books`: title, author, category, ISBN, shelf, copy count, and available count.
 - `loans`: book, member, due date, and return status.
 - `reservations`: requested book, member, review status, and timestamps.
+- `settings`: library name, contact email, and default loan period.
 
 Preview records are separate from MongoDB. MongoDB persistence becomes active only after this app is deployed, the environment variables are configured, and at least one library account has been created.
