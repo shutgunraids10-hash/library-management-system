@@ -33,7 +33,7 @@ const sections = {
 };
 const titles = { overview: "Overview", catalog: "Find a book", "my-library": "My library", reservations: "Reservations", inventory: "Book inventory", transactions: "Borrowing & returns", reports: "Reports & activity", users: "People & access", settings: "System settings" };
 const state = {
-  role: "student", page: window.location.pathname.replace(/\/+$/, "") === "/login" || window.location.hash === "#login" ? "login" : "overview", query: "", category: "All categories", filter: "all", modal: null,
+  role: "student", page: "login", query: "", category: "All categories", filter: "all", modal: null,
   books: load("smartlib_books", seedBooks), loans: load("smartlib_loans", seedLoans), reservations: load("smartlib_reservations", seedReservations),
   settings: loadObject("smartlib_settings", { libraryName: "Northview Community Library", contactEmail: "library@northview.edu", loanPeriod: 14 }),
   toast: "", health: "preview", liveUser: null, users: [{ name: "Alex Morgan", email: "alex.morgan@northview.edu", role: "student", status: "Active" }, { name: "Jamie Rivera", email: "jamie.rivera@northview.edu", role: "librarian", status: "Active" }, { name: "Taylor Morgan", email: "taylor.morgan@northview.edu", role: "administrator", status: "Active" }, { name: "Mia Santos", email: "mia.santos@northview.edu", role: "student", status: "Active" }]
