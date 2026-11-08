@@ -1,0 +1,20 @@
+{
+  "name": "smartlib-lms",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SmartLib library management system",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "vercel dev",
+    "start": "vercel dev",
+    "create-admin": "node --env-file=.env.local scripts/create-admin.js"
+  },
+  "dependencies": {
+    "mongodb": "^6.21.0"
+  },
+  "devDependencies": {
+    "vercel": "^48.1.0"
+  }
+}
